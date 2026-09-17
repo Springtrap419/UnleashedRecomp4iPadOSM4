@@ -1,0 +1,81 @@
+name: iPadOS Bootstrap
+
+on:
+  push:
+    branches:
+      - ios-bootstrap
+    paths:
+      - 'ios/bootstrap/**'
+      - '.github/workflows/ios-bootstrap.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ios-bootstrap-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-ios-bootstrap:
+    name: Build unsigned iPadOS bootstrap
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          cmake --version
+          xcrun --sdk iphoneos --show-sdk-version
+          xcrun --sdk iphoneos --show-sdk-path
+
+      - name: Configure iPadOS project
+        run: |
+          cmake -S ios/bootstrap -B out/ios-bootstrap -G Xcode \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0
+
+      - name: Build iPadOS app
+        run: |
+          cmake --build out/ios-bootstrap \
+            --config Release \
+            --target UnleashedRecompIOSBootstrap \
+            -- -sdk iphoneos CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+
+      - name: Locate app bundle
+        id: locate
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_PATH="$(find out/ios-bootstrap -type d -name 'Unleashed iPad Test.app' -print -quit)"
+          if [[ -z "$APP_PATH" ]]; then
+            echo 'Expected .app bundle was not produced.' >&2
+            find out/ios-bootstrap -maxdepth 4 -print
+            exit 1
+          fi
+          echo "app_path=$APP_PATH" >> "$GITHUB_OUTPUT"
+          echo "Built app: $APP_PATH"
+          file "$APP_PATH/Unleashed iPad Test" || true
+
+      - name: Package unsigned IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf package
+          mkdir -p package/Payload
+          cp -R "${{ steps.locate.outputs.app_path }}" package/Payload/
+          (cd package && /usr/bin/zip -qry ../Unleashed-iPad-Bootstrap-unsigned.ipa Payload)
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent \
+            "${{ steps.locate.outputs.app_path }}" \
+            Unleashed-iPad-Bootstrap-app.zip
+
+      - name: Upload bootstrap artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Unleashed-iPad-Bootstrap-unsigned
+          path: |
+            Unleashed-iPad-Bootstrap-unsigned.ipa
+            Unleashed-iPad-Bootstrap-app.zip
+          if-no-files-found: error
