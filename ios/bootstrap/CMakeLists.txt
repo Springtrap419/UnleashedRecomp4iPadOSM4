@@ -17,6 +17,7 @@ target_compile_options(UnleashedRecompIOSBootstrap PRIVATE -fobjc-arc)
 
 target_link_libraries(UnleashedRecompIOSBootstrap PRIVATE
     "-framework UIKit"
+    "-framework CoreGraphics"
     "-framework Metal"
     "-framework MetalKit"
     "-framework QuartzCore"
